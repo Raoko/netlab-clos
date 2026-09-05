@@ -1,0 +1,46 @@
+# 2-spine / 4-leaf eBGP Clos fabric (RFC 7938 underlay).
+# Deploy:  sudo containerlab deploy -t clos.clab.yml
+# Destroy: sudo containerlab destroy -t clos.clab.yml --cleanup
+name: clos01
+
+topology:
+  kinds:
+    nokia_srlinux:
+      image: ghcr.io/nokia/srlinux:24.10.1
+      type: ixrd3l
+    linux:
+      image: alpine:3.20
+
+  nodes:
+    spine1: {kind: nokia_srlinux, startup-config: configs/spine1.cfg}
+    spine2: {kind: nokia_srlinux, startup-config: configs/spine2.cfg}
+    leaf1:  {kind: nokia_srlinux, startup-config: configs/leaf1.cfg}
+    leaf2:  {kind: nokia_srlinux, startup-config: configs/leaf2.cfg}
+    leaf3:  {kind: nokia_srlinux, startup-config: configs/leaf3.cfg}
+    leaf4:  {kind: nokia_srlinux, startup-config: configs/leaf4.cfg}
+
+    host1:
+      kind: linux
+      exec:
+        - ip addr add 172.16.1.10/24 dev eth1
+        - ip route add 172.16.0.0/12 via 172.16.1.1
+    host2:
+      kind: linux
+      exec:
+        - ip addr add 172.16.4.10/24 dev eth1
+        - ip route add 172.16.0.0/12 via 172.16.4.1
+
+  links:
+    # spine1 -> every leaf (spine port ethernet-1/N maps to leafN)
+    - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
+    - endpoints: ["spine1:e1-2", "leaf2:e1-1"]
+    - endpoints: ["spine1:e1-3", "leaf3:e1-1"]
+    - endpoints: ["spine1:e1-4", "leaf4:e1-1"]
+    # spine2 -> every leaf (leaf port ethernet-1/2 faces spine2)
+    - endpoints: ["spine2:e1-1", "leaf1:e1-2"]
+    - endpoints: ["spine2:e1-2", "leaf2:e1-2"]
+    - endpoints: ["spine2:e1-3", "leaf3:e1-2"]
+    - endpoints: ["spine2:e1-4", "leaf4:e1-2"]
+    # hosts hang off ethernet-1/10 on their leaf
+    - endpoints: ["leaf1:e1-10", "host1:eth1"]
+    - endpoints: ["leaf4:e1-10", "host2:eth1"]

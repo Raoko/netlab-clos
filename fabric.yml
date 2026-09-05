@@ -1,0 +1,27 @@
+# Fabric intent — single source of truth.
+# Every device config in configs/ is GENERATED from this file by gen_configs.py.
+# Never hand-edit configs/. Edit here, regenerate, redeploy.
+
+fabric:
+  name: clos-01
+  underlay: ebgp          # RFC 7938 — eBGP as the DC underlay protocol
+  p2p_supernet: 10.0.0.0/16
+  loopback_supernet: 10.255.0.0/16
+
+spines:
+  - {name: spine1, asn: 65001, loopback: 10.255.0.1}
+  - {name: spine2, asn: 65002, loopback: 10.255.0.2}
+
+leaves:
+  - {name: leaf1, asn: 65101, loopback: 10.255.1.1, host_subnet: 172.16.1.0/24}
+  - {name: leaf2, asn: 65102, loopback: 10.255.1.2, host_subnet: 172.16.2.0/24}
+  - {name: leaf3, asn: 65103, loopback: 10.255.1.3, host_subnet: 172.16.3.0/24}
+  - {name: leaf4, asn: 65104, loopback: 10.255.1.4, host_subnet: 172.16.4.0/24}
+
+# P2P links are derived, not listed. Rule:
+#   subnet     = 10.0.<spine_index>.<leaf_index * 2>/31
+#   spine side = .<leaf_index * 2>
+#   leaf side  = .<leaf_index * 2 + 1>
+#   spine port = ethernet-1/<leaf_index + 1>
+#   leaf port  = ethernet-1/<spine_index + 1>
+#   leaf host port = ethernet-1/10
