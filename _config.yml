@@ -1,0 +1,5 @@
+# Turns README.md into a GitHub Pages site.
+# Enable at: repo Settings > Pages > Source = Deploy from branch > main / (root)
+theme: jekyll-theme-cayman
+title: eBGP Clos Fabric Lab
+description: Leaf-spine datacenter fabric with configs generated from a data model
