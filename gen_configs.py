@@ -68,8 +68,8 @@ def bgp(asn, router_id, neighbors):
         f"{ni} afi-safi ipv4-unicast multipath allow-multiple-as true",
         f"{ni} afi-safi ipv4-unicast multipath maximum-paths 8",
         f"{ni} group FABRIC admin-state enable",
-        f"{ni} group FABRIC export-policy EXPORT-FABRIC",
-        f"{ni} group FABRIC import-policy IMPORT-ALL",
+        f"{ni} group FABRIC export-policy [ EXPORT-FABRIC ]",
+        f"{ni} group FABRIC import-policy [ IMPORT-ALL ]",
         f"{ni} group FABRIC afi-safi ipv4-unicast admin-state enable",
         # Fail fast in a lab; tune before you ever suggest these in production.
         f"{ni} group FABRIC timers connect-retry 5",
