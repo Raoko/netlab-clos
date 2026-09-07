@@ -11,6 +11,7 @@ next-hops, and end-to-end ping returns 0% loss.
 
 - 📊 **[Verification output](docs/verification.md)** — real terminal output: sessions, FIB, both spines answering hop 2
 - 🔥 **[Failure drill](docs/failure-drill.md)** — kill a spine uplink, next-hops go 2 → 1, **traffic never drops**
+- 🏠 **[home-netops](https://github.com/Raoko/home-netops)** — the network this runs on, plus two incident case studies: a cluster unreachable while every switch port read `1G Full`, and a gateway cutover that produced no DHCP and no error
 
 Device configuration is **generated from a data model**, not hand-written.
 `fabric.yml` is the intent; `gen_configs.py` renders it; `configs/` is build
