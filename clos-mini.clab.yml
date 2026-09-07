@@ -1,0 +1,55 @@
+# clos-mini — a deliberately EMPTY fabric, to be configured by hand.
+#
+# clos.clab.yml boots six switches with generated startup-configs. This one boots
+# three with NOTHING. No startup-config keys, on purpose.
+#
+# Why: a config you did not type is a config you cannot defend. The point of this
+# topology is the typing, not the running.
+#
+#   deploy:   sudo containerlab deploy -t clos-mini.clab.yml
+#   console:  sudo docker exec -it clab-closmini-spine1 sr_cli
+#   destroy:  sudo containerlab destroy -t clos-mini.clab.yml --cleanup
+#
+# Runs alongside clos01 — different lab name, different container names, no conflict.
+
+name: closmini
+
+topology:
+  nodes:
+    spine1:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:24.10.1
+      type: ixrd3
+
+    leaf1:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:24.10.1
+      type: ixrd3
+
+    leaf2:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:24.10.1
+      type: ixrd3
+
+    host1:
+      kind: linux
+      image: alpine:latest
+      exec:
+        - ip addr add 172.16.1.10/24 dev eth1
+        - ip route add 172.16.0.0/16 via 172.16.1.1
+
+    host2:
+      kind: linux
+      image: alpine:latest
+      exec:
+        - ip addr add 172.16.2.10/24 dev eth1
+        - ip route add 172.16.0.0/16 via 172.16.2.1
+
+  links:
+    # spine1 <-> leaf1 : 10.0.0.0/31
+    - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
+    # spine1 <-> leaf2 : 10.0.0.2/31
+    - endpoints: ["spine1:e1-2", "leaf2:e1-1"]
+    # hosts hang off e1-10 on their leaf
+    - endpoints: ["leaf1:e1-10", "host1:eth1"]
+    - endpoints: ["leaf2:e1-10", "host2:eth1"]
