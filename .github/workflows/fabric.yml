@@ -1,0 +1,83 @@
+name: fabric
+
+# Deploys the real topology on a GitHub runner and fails the build if the
+# fabric does not converge. Generated configs are checked, not trusted.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    name: Configs match fabric.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+
+      - name: Regenerate configs from the data model
+        run: python gen_configs.py
+
+      # configs/ is generated, never hand-edited. If regenerating changes
+      # anything, someone edited the artifact instead of the model.
+      - name: Fail if configs/ drifted from fabric.yml
+        run: |
+          if ! git diff --quiet -- configs/; then
+            echo "::error::configs/ does not match fabric.yml."
+            echo "Someone edited a rendered config instead of the generator."
+            git diff -- configs/
+            exit 1
+          fi
+          echo "configs/ is reproducible from fabric.yml"
+
+  deploy:
+    name: Fabric converges
+    runs-on: ubuntu-latest
+    needs: generate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install containerlab
+        run: bash -c "$(curl -sL https://get.containerlab.dev)"
+
+      - name: Deploy topology
+        run: sudo containerlab deploy -t clos.clab.yml
+
+      - name: Wait for BGP to converge
+        run: sleep 90
+
+      - name: All BGP sessions established
+        run: |
+          fail=0
+          for d in spine1 spine2 leaf1 leaf2 leaf3 leaf4; do
+            want=2; case $d in spine*) want=4;; esac
+            got=$(sudo docker exec clab-clos01-$d sr_cli -d \
+              'show network-instance default protocols bgp neighbor' 2>/dev/null \
+              | grep -c 'established' || true)
+            echo "$d: $got/$want established"
+            [ "$got" -lt "$want" ] && { echo "::error::$d has $got of $want"; fail=1; }
+          done
+          exit $fail
+
+      - name: leaf1 has TWO ECMP next-hops to 172.16.4.0/24
+        run: |
+          out=$(sudo docker exec clab-clos01-leaf1 sr_cli -d \
+            'show network-instance default route-table ipv4-unicast prefix 172.16.4.0/24' 2>/dev/null)
+          echo "$out"
+          n=$(echo "$out" | grep -cE '10\.0\.[01]\.0/31' || true)
+          [ "$n" -eq 2 ] || { echo "::error::expected 2 next-hops, found $n"; exit 1; }
+          echo "ECMP confirmed: 2 next-hops"
+
+      - name: End-to-end reachability, zero loss
+        run: |
+          sudo docker exec clab-clos01-host1 ping -c5 -W2 172.16.4.10 | tee /tmp/p.txt
+          grep -q ' 0% packet loss' /tmp/p.txt || { echo "::error::packet loss"; exit 1; }
+
+      - name: Teardown
+        if: always()
+        run: sudo containerlab destroy -t clos.clab.yml --cleanup || true

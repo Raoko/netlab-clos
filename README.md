@@ -1,7 +1,16 @@
 # clos01 — eBGP Leaf-Spine Fabric Lab
 
+[![fabric](https://github.com/Raoko/netlab-clos/actions/workflows/fabric.yml/badge.svg)](https://github.com/Raoko/netlab-clos/actions/workflows/fabric.yml)
+
 A 2-spine / 4-leaf Clos fabric running an eBGP underlay (RFC 7938), built with
 [Containerlab](https://containerlab.dev) and Nokia SR Linux, on a Proxmox host.
+
+**Verified, not just deployed.** CI deploys the real topology on every push and
+fails the build unless every BGP session establishes, `leaf1` installs **two** ECMP
+next-hops, and end-to-end ping returns 0% loss.
+
+- 📊 **[Verification output](docs/verification.md)** — real terminal output: sessions, FIB, both spines answering hop 2
+- 🔥 **[Failure drill](docs/failure-drill.md)** — kill a spine uplink, next-hops go 2 → 1, **traffic never drops**
 
 Device configuration is **generated from a data model**, not hand-written.
 `fabric.yml` is the intent; `gen_configs.py` renders it; `configs/` is build
@@ -11,22 +20,40 @@ unchanged.
 
 ## Topology
 
+```mermaid
+flowchart TD
+    S1["spine1<br/>AS 65001<br/>10.255.0.1"]
+    S2["spine2<br/>AS 65002<br/>10.255.0.2"]
+    L1["leaf1<br/>AS 65101<br/>172.16.1.0/24"]
+    L2["leaf2<br/>AS 65102<br/>172.16.2.0/24"]
+    L3["leaf3<br/>AS 65103<br/>172.16.3.0/24"]
+    L4["leaf4<br/>AS 65104<br/>172.16.4.0/24"]
+    H1(["host1<br/>172.16.1.10"])
+    H2(["host2<br/>172.16.4.10"])
+
+    S1 --- L1
+    S1 --- L2
+    S1 --- L3
+    S1 --- L4
+    S2 --- L1
+    S2 --- L2
+    S2 --- L3
+    S2 --- L4
+    L1 --- H1
+    L4 --- H2
+
+    style S1 fill:#4361ee,stroke:#333,color:#fff
+    style S2 fill:#4361ee,stroke:#333,color:#fff
+    style L1 fill:#4cc9f0,stroke:#333,color:#000
+    style L2 fill:#4cc9f0,stroke:#333,color:#000
+    style L3 fill:#4cc9f0,stroke:#333,color:#000
+    style L4 fill:#4cc9f0,stroke:#333,color:#000
+    style H1 fill:#90be6d,stroke:#333,color:#000
+    style H2 fill:#90be6d,stroke:#333,color:#000
 ```
-              AS 65001              AS 65002
-              +--------+            +--------+
-              | spine1 |            | spine2 |
-              +--------+            +--------+
-               / |  | \             / |  | \
-              /  |  |  \           /  |  |  \
-             /   |  |   \         /   |  |   \
-        +-----+ +-----+ +-----+ +-----+
-        |leaf1| |leaf2| |leaf3| |leaf4|
-        +-----+ +-----+ +-----+ +-----+
-         65101   65102   65103   65104
-           |                       |
-        host1                   host2
-     172.16.1.10             172.16.4.10
-```
+
+`host1 -> host2` is the test path: **leaf1 -> spine -> leaf4**, with either spine
+usable. Eight links, every leaf to every spine.
 
 Every leaf peers with every spine. Unique ASN per device, so leaf-to-leaf
 traffic transits a spine with a growing AS path and no loop suppression
