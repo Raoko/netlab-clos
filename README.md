@@ -11,6 +11,7 @@ next-hops, and end-to-end ping returns 0% loss.
 
 - 📊 **[Verification output](docs/verification.md)** — real terminal output: sessions, FIB, both spines answering hop 2
 - 🔥 **[Failure drill](docs/failure-drill.md)** — kill a spine uplink, next-hops go 2 → 1, **traffic never drops**
+- ✅ **[Built by hand — the log](docs/hand-build-log.md)** — the same fabric typed at the CLI from an empty box, the **three faults** that kept BGP down, and what SR Linux does differently from IOS
 - ✍️ **[Build it by hand](docs/hand-build.md)** — `clos-mini.clab.yml` boots three switches with **no config at all**. Same protocols, typed at the CLI, because a config you did not write is a config you cannot defend
 - 🏠 **[home-netops](https://github.com/Raoko/home-netops)** — the network this runs on, plus two incident case studies: a cluster unreachable while every switch port read `1G Full`, and a gateway cutover that produced no DHCP and no error
 
