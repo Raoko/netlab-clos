@@ -6,11 +6,15 @@ truth, device configuration is a rendered artifact, and the renderer is
 reviewable in git. Swap fabric.yml for a NetBox API call and the rest of
 this script does not change.
 
-Usage:  python3 gen_configs.py
+Usage:  python3 gen_configs.py                    # from fabric.yml (CI uses this)
+        python3 gen_configs.py --source netbox    # from NetBox, site clos-01
+        python3 gen_configs.py --out /tmp/configs # write somewhere else
 Output: configs/<device>.cfg
 """
 
+import argparse
 import ipaddress
+import os
 import pathlib
 import sys
 
@@ -101,10 +105,85 @@ def render(dev, ifaces, subifs, asn, loopback, neighbors):
     return "\n".join(lines) + "\n"
 
 
-def main():
-    data = yaml.safe_load((ROOT / "fabric.yml").read_text())
+def load_yaml():
+    return yaml.safe_load((ROOT / "fabric.yml").read_text())
+
+
+def load_netbox():
+    """Build the same {spines, leaves} structure from NetBox instead of fabric.yml.
+
+    Reads site clos-01: devices split by role, the ASN from the bgp_asn custom
+    field, the loopback from each device's primary IPv4, and each leaf's host
+    subnet from the address on ethernet-1/10. Everything else is derived exactly
+    as it is from fabric.yml, so both sources must render identical configs.
+    """
+    import requests  # only this source needs it; CI installs pyyaml alone
+
+    url = os.environ.get("NETBOX_URL", "https://192.168.1.211").rstrip("/")
+    token = os.environ.get("NETBOX_TOKEN")
+    token_file = pathlib.Path.home() / ".config" / "netbox" / "token"
+    if not token and token_file.exists():
+        token = token_file.read_text().strip()
+    if not token:
+        sys.exit(f"No NetBox token: set NETBOX_TOKEN or write it to {token_file}")
+
+    session = requests.Session()
+    session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/json"})
+    ca = os.environ.get("NETBOX_CA")
+    if ca:
+        session.verify = ca
+    else:
+        # The lab NetBox uses a self-signed certificate. Say so rather than hide it.
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        session.verify = False
+        print("note: NetBox TLS certificate not verified; set NETBOX_CA to verify", file=sys.stderr)
+
+    def get(path, **params):
+        r = session.get(f"{url}/api/{path}", params={**params, "limit": 0}, timeout=15)
+        r.raise_for_status()
+        return r.json()["results"]
+
+    def position(device):
+        # spine1 -> 1, leaf4 -> 4. List order drives the /31 derivation, so it
+        # must match fabric.yml's order, not NetBox's alphabetical default.
+        digits = "".join(c for c in device["name"] if c.isdigit())
+        return int(digits) if digits else 0
+
+    def entry(device):
+        asn = (device.get("custom_fields") or {}).get("bgp_asn")
+        ip = (device.get("primary_ip4") or {}).get("address")
+        if asn is None or ip is None:
+            sys.exit(f"{device['name']}: missing bgp_asn or primary IPv4 in NetBox")
+        return {"name": device["name"], "asn": asn, "loopback": ip.split("/")[0]}
+
+    spines = [entry(d) for d in sorted(get("dcim/devices/", site="clos-01", role="spine"), key=position)]
+    leaves = []
+    for d in sorted(get("dcim/devices/", site="clos-01", role="leaf"), key=position):
+        leaf = entry(d)
+        host = get("ipam/ip-addresses/", device=d["name"], interface="ethernet-1/10")
+        if len(host) != 1:
+            sys.exit(f"{d['name']}: expected one address on ethernet-1/10, found {len(host)}")
+        leaf["host_subnet"] = str(ipaddress.ip_interface(host[0]["address"]).network)
+        leaves.append(leaf)
+
+    if not spines or not leaves:
+        sys.exit("NetBox returned no spines or leaves for site clos-01")
+    return {"spines": spines, "leaves": leaves}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--source", choices=["yaml", "netbox"], default="yaml",
+                    help="where the fabric intent comes from (default: fabric.yml)")
+    ap.add_argument("--out", type=pathlib.Path, default=OUT,
+                    help="output directory (default: configs/)")
+    args = ap.parse_args(argv)
+
+    data = load_netbox() if args.source == "netbox" else load_yaml()
     spines, leaves = data["spines"], data["leaves"]
-    OUT.mkdir(exist_ok=True)
+    out = args.out
+    out.mkdir(parents=True, exist_ok=True)
 
     for si, sp in enumerate(spines):
         ifaces, subifs, nbrs = [], [], []
@@ -115,7 +194,7 @@ def main():
             subifs.append(f"{port}.0")
             nbrs.append((l_ip, lf["asn"]))
         cfg = render(sp["name"], ifaces, subifs, sp["asn"], sp["loopback"], nbrs)
-        (OUT / f"{sp['name']}.cfg").write_text(cfg)
+        (out / f"{sp['name']}.cfg").write_text(cfg)
 
     for li, lf in enumerate(leaves):
         ifaces, subifs, nbrs = [], [], []
@@ -131,9 +210,9 @@ def main():
         ifaces.append(("ethernet-1/10", gw, net.prefixlen))
         subifs.append("ethernet-1/10.0")
         cfg = render(lf["name"], ifaces, subifs, lf["asn"], lf["loopback"], nbrs)
-        (OUT / f"{lf['name']}.cfg").write_text(cfg)
+        (out / f"{lf['name']}.cfg").write_text(cfg)
 
-    print(f"wrote {len(spines) + len(leaves)} configs to {OUT}")
+    print(f"wrote {len(spines) + len(leaves)} configs to {out} (source: {args.source})")
 
 
 if __name__ == "__main__":
